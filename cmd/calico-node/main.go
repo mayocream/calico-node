@@ -115,6 +115,7 @@ func main() {
 		logrus.SetOutput(os.Stderr)
 		bpf.RunBPFCmd()
 	} else if *runStartup {
+		// 初始化, 容器启动时会运行
 		logrus.SetFormatter(&logutils.Formatter{Component: "startup"})
 		startup.Run()
 	} else if *monitorAddrs {

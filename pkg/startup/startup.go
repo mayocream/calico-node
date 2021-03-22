@@ -88,6 +88,7 @@ var (
 	felixNodeConfigNamePrefix = "node."
 )
 
+// 初始化, 容器启动时执行
 // This file contains the main startup processing for the calico/node.  This
 // includes:
 // -  Detecting IP address and Network to use for BGP
@@ -102,6 +103,8 @@ func Run() {
 	nodeName := determineNodeName()
 	log.Infof("Starting node %s with version %s", nodeName, VERSION)
 
+	// Calico Client 实际就是对后端储存的封装, 数据储存在 etcdv3
+	// 通过设置 config 文件, 配置 etcd 地址, key 进行通信
 	// Create the Calico API cli.
 	cfg, cli := calicoclient.CreateClient()
 
@@ -129,6 +132,7 @@ func Run() {
 	var clientset *kubernetes.Clientset
 	var kubeadmConfig, rancherState *v1.ConfigMap
 
+	// 通过 client-go 获取当前 service-account 可以访问到的 K8s 资源
 	// If running under kubernetes with secrets to call k8s API
 	if config, err := rest.InClusterConfig(); err == nil {
 		// default timeout is 30 seconds, which isn't appropriate for this kind of
@@ -177,8 +181,10 @@ func Run() {
 		}
 	}
 
+	// 获取并配置 node 的网络信息
 	configureAndCheckIPAddressSubnets(ctx, cli, node)
 
+	// 默认开启 bird 模式
 	// If Calico is running in policy only mode we don't need to write BGP related details to the Node.
 	if os.Getenv("CALICO_NETWORKING_BACKEND") != "none" {
 		// Configure the node AS number.
@@ -243,6 +249,8 @@ func getMonitorPollInterval() time.Duration {
 
 func configureAndCheckIPAddressSubnets(ctx context.Context, cli client.Interface, node *api.Node) bool {
 	// Configure and verify the node IP addresses and subnets.
+	// 覆盖 node 网络参数
+	// 判断当前初始化时网络环境是否和配置文件中的网络一致
 	checkConflicts, err := configureIPsAndSubnets(node)
 	if err != nil {
 		// If this is auto-detection error, do a cleanup before returning
@@ -485,6 +493,7 @@ func getNode(ctx context.Context, client client.Interface, nodeName string) *api
 	node, err := client.Nodes().Get(ctx, nodeName, options.GetOptions{})
 
 	if err != nil {
+		// 如果错误不是资源不存在, 那就是访问出问题了
 		if _, ok := err.(cerrors.ErrorResourceDoesNotExist); !ok {
 			log.WithError(err).WithField("Name", nodeName).Info("Unable to query node configuration")
 			log.Warn("Unable to access datastore to query node configuration")
@@ -492,6 +501,7 @@ func getNode(ctx context.Context, client client.Interface, nodeName string) *api
 		}
 
 		log.WithField("Name", nodeName).Info("Building new node resource")
+		// 创建一个新的 Node 对象
 		node = api.NewNode()
 		node.Name = nodeName
 	}
@@ -499,9 +509,10 @@ func getNode(ctx context.Context, client client.Interface, nodeName string) *api
 	return node
 }
 
+// 会对传入的 node 指针数据进行修改
 // configureIPsAndSubnets updates the supplied node resource with IP and Subnet
 // information to use for BGP.  This returns true if we detect a change in Node IP address.
-func configureIPsAndSubnets(node *api.Node) (bool, error) {
+func configureIPsAndSubnets(node *api.Node) (bool /* bool 值表示是否检查 ip 地址冲突 */, error) {
 	// If the node resource currently has no BGP configuration, add an empty
 	// set of configuration as it makes the processing below easier, and we
 	// must end up configuring some BGP fields before we complete.
@@ -519,6 +530,7 @@ func configureIPsAndSubnets(node *api.Node) (bool, error) {
 	//
 	// If we aren't auto-detecting then we need to validate the configured
 	// value and possibly fix up missing subnet configuration.
+	// 获取 Host 宿主机的 IP, 默认会通过 Pod status.hostIP 参数传递进来
 	ipv4Env := os.Getenv("IP")
 	if ipv4Env == "autodetect" || (ipv4Env == "" && node.Spec.BGP.IPv4Address == "") {
 		adm := os.Getenv("IP_AUTODETECTION_METHOD")
@@ -543,6 +555,7 @@ func configureIPsAndSubnets(node *api.Node) (bool, error) {
 	} else if ipv4Env != "none" {
 		if ipv4Env != "" {
 			// Attempt to get the local CIDR of ipv4Env
+			// 通过 Pod 特权模式, 进程能够访问到宿主机的网卡信息 (Interface), 遍历匹配到 CIDR
 			ipv4CIDROrIP, err := getLocalCIDR(ipv4Env, 4, autodetection.GetInterfaces)
 			if err != nil {
 				log.Warnf("Attempt to get the local CIDR: %s failed, %s", ipv4Env, err)
@@ -590,6 +603,7 @@ func configureIPsAndSubnets(node *api.Node) (bool, error) {
 		return true, nil
 	}
 
+	// bool 值表示是否检查 ip 地址冲突
 	return false, nil
 }
 

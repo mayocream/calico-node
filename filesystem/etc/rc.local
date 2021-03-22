@@ -1,3 +1,4 @@
+# 守护程序脚本
 # Handle old CALICO_NETWORKING environment by converting to the new config.
 if [ -n "$CALICO_NETWORKING" ]; then
 	echo "WARNING: $CALICO_NETWORKING will be deprecated: use $CALICO_NETWORKING_BACKEND instead"
