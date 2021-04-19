@@ -188,10 +188,12 @@ func Run() {
 	// If Calico is running in policy only mode we don't need to write BGP related details to the Node.
 	if os.Getenv("CALICO_NETWORKING_BACKEND") != "none" {
 		// Configure the node AS number.
+		// 默认没有 AS 号
 		configureASNumber(node)
 
 		if clientset != nil {
 			log.Info("Setting NetworkUnavailable to False")
+			// 设置 K8s Node 节点 condition
 			err := setNodeNetworkUnavailableFalse(*clientset, nodeName)
 			if err != nil {
 				log.WithError(err).Error("Unable to set NetworkUnavailable to False")
@@ -205,6 +207,7 @@ func Run() {
 	// Check expected filesystem
 	ensureFilesystemAsExpected()
 
+	// 通过 Client 创建 Calico Node 资源
 	// Apply the updated node resource.
 	if _, err := CreateOrUpdate(ctx, cli, node); err != nil {
 		log.WithError(err).Errorf("Unable to set node resource configuration")
@@ -337,6 +340,7 @@ func configureNodeRef(node *api.Node) {
 		return
 	}
 
+	// node 架构
 	node.Spec.OrchRefs = []api.OrchRef{{NodeName: nodeRef, Orchestrator: orchestrator}}
 }
 
@@ -844,6 +848,7 @@ func autoDetectCIDRBySkipInterface(ifaceRegexes []string, version int) *cnet.IPN
 // configureASNumber configures the Node resource with the AS number specified
 // in the environment, or is a no-op if not specified.
 func configureASNumber(node *api.Node) {
+	// 默认没有 AS 号
 	// Extract the AS number from the environment
 	asStr := os.Getenv("AS")
 	if asStr != "" {
