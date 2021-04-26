@@ -886,6 +886,7 @@ func GenerateIPv6ULAPrefix() (string, error) {
 // configureIPPools ensures that default IP pools are created (unless explicitly requested otherwise).
 func configureIPPools(ctx context.Context, client client.Interface, kubeadmConfig *v1.ConfigMap) {
 	// Read in environment variables for use here and later.
+	// 默认不会手动指定 Node 的 IP Pool
 	ipv4Pool := os.Getenv("CALICO_IPV4POOL_CIDR")
 	ipv6Pool := os.Getenv("CALICO_IPV6POOL_CIDR")
 
@@ -917,6 +918,7 @@ func configureIPPools(ctx context.Context, client client.Interface, kubeadmConfi
 		}
 	}
 
+	// ipip 默认是 Off
 	ipv4IpipModeEnvVar := strings.ToLower(os.Getenv("CALICO_IPV4POOL_IPIP"))
 	ipv4VXLANModeEnvVar := strings.ToLower(os.Getenv("CALICO_IPV4POOL_VXLAN"))
 
@@ -958,6 +960,8 @@ func configureIPPools(ctx context.Context, client client.Interface, kubeadmConfi
 		ip, _, err := cnet.ParseCIDR(p.Spec.CIDR)
 		if err != nil {
 			log.Warnf("Error parsing CIDR '%s'. Skipping the IPPool.", p.Spec.CIDR)
+			// bugfix
+			continue
 		}
 		version := ip.Version()
 		ipv4Present = ipv4Present || (version == 4)
@@ -1000,6 +1004,7 @@ func configureIPPools(ctx context.Context, client client.Interface, kubeadmConfi
 		return // not really needed but allows testing to function
 	}
 
+	// 若 IP Pool 资源没有被初始化完成, 则在 Node 进行创建操作
 	// Ensure there are pools created for each IP version.
 	if !ipv4Present {
 		log.Debug("Create default IPv4 IP pool")
@@ -1015,6 +1020,7 @@ func configureIPPools(ctx context.Context, client client.Interface, kubeadmConfi
 	}
 }
 
+// 创建 IP Pool 配置
 // createIPPool creates an IP pool using the specified CIDR.  This
 // method is a no-op if the pool already exists.
 func createIPPool(ctx context.Context, client client.Interface, cidr *cnet.IPNet, poolName, ipipModeName, vxlanModeName string, isNATOutgoingEnabled bool, blockSize int, nodeSelector string) {
@@ -1360,6 +1366,7 @@ func terminate() {
 	exitFunction(1)
 }
 
+// 从 Kubeadm config 获取集群网络配置, IP Pool CIDR
 // extractKubeadmCIDRs looks through the config map and parses lines starting with 'podSubnet'.
 func extractKubeadmCIDRs(kubeadmConfig *v1.ConfigMap) (string, string, error) {
 	var v4, v6 string
@@ -1374,15 +1381,19 @@ func extractKubeadmCIDRs(kubeadmConfig *v1.ConfigMap) (string, string, error) {
 	// according to the IP family of the matching string.
 	re := regexp.MustCompile(`podSubnet: (.*)`)
 
+	// 遍历configmap 每一个 key
 	for _, l := range kubeadmConfig.Data {
 		if line = re.FindStringSubmatch(l); line != nil {
 			break
 		}
 	}
 
+	// ref: https://play.golang.org/p/-k5tKkRjPcl
+	// 匹配到的结果: []string{"podSubnet: 10.32.0.0/13", "10.32.0.0/13"}
 	if len(line) != 0 {
 		// IPv4 and IPv6 CIDRs will be separated by a comma in a dual stack setup.
 		for _, cidr := range strings.Split(line[1], ",") {
+			// 匹配到的结果 10.32.0.0/13
 			addr, _, err := net.ParseCIDR(cidr)
 			if err != nil {
 				break
